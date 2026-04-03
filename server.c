@@ -3,7 +3,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <windows.h>
 #include "db.h"
 
 CRITICAL_SECTION queue_mutex;
@@ -21,6 +20,8 @@ void enqueue(Task t) {
         task_queue.rear = (task_queue.rear + 1) % QUEUE_SIZE;
         task_queue.count++;
         WakeConditionVariable(&queue_cond);
+    } else {
+        printf("Fila cheia. Comando descartado.\n");
     }
 
     LeaveCriticalSection(&queue_mutex);
@@ -51,6 +52,7 @@ void insert_record(Record r) {
     if (fp != NULL) {
         fwrite(&r, sizeof(Record), 1, fp);
         fclose(fp);
+        printf("Registro inserido com sucesso. ID: %d, Name: %s\n", r.id, r.name);
     } else {
         printf("Erro ao abrir db.txt para escrita.\n");
     }
@@ -64,11 +66,14 @@ void delete_record(int id) {
     FILE *fp = fopen("db.txt", "rb");
     FILE *tmp = fopen("tmp.txt", "wb");
     Record r;
+    int found = 0;
 
     if (fp != NULL && tmp != NULL) {
         while (fread(&r, sizeof(Record), 1, fp) == 1) {
             if (r.id != id) {
                 fwrite(&r, sizeof(Record), 1, tmp);
+            } else {
+                found = 1;
             }
         }
 
@@ -77,6 +82,12 @@ void delete_record(int id) {
 
         remove("db.txt");
         rename("tmp.txt", "db.txt");
+
+        if (found) {
+            printf("Registro com ID %d removido com sucesso.\n", id);
+        } else {
+            printf("Registro com ID %d nao encontrado.\n", id);
+        }
     } else {
         if (fp) fclose(fp);
         if (tmp) fclose(tmp);
@@ -93,12 +104,78 @@ void list_records() {
     Record r;
 
     if (fp != NULL) {
+        printf("=== LISTA DE REGISTROS ===\n");
         while (fread(&r, sizeof(Record), 1, fp) == 1) {
             printf("ID: %d, Name: %s\n", r.id, r.name);
         }
         fclose(fp);
     } else {
         printf("db.txt ainda nao existe ou nao pode ser aberto.\n");
+    }
+
+    LeaveCriticalSection(&file_mutex);
+}
+
+void select_record(int id) {
+    EnterCriticalSection(&file_mutex);
+
+    FILE *fp = fopen("db.txt", "rb");
+    Record r;
+    int found = 0;
+
+    if (fp != NULL) {
+        while (fread(&r, sizeof(Record), 1, fp) == 1) {
+            if (r.id == id) {
+                printf("Registro encontrado -> ID: %d, Name: %s\n", r.id, r.name);
+                found = 1;
+                break;
+            }
+        }
+        fclose(fp);
+
+        if (!found) {
+            printf("Registro com ID %d nao encontrado.\n", id);
+        }
+    } else {
+        printf("db.txt ainda nao existe ou nao pode ser aberto.\n");
+    }
+
+    LeaveCriticalSection(&file_mutex);
+}
+
+void update_record(int id, const char *new_name) {
+    EnterCriticalSection(&file_mutex);
+
+    FILE *fp = fopen("db.txt", "rb");
+    FILE *tmp = fopen("tmp.txt", "wb");
+    Record r;
+    int found = 0;
+
+    if (fp != NULL && tmp != NULL) {
+        while (fread(&r, sizeof(Record), 1, fp) == 1) {
+            if (r.id == id) {
+                strncpy(r.name, new_name, MAX_NAME - 1);
+                r.name[MAX_NAME - 1] = '\0';
+                found = 1;
+            }
+            fwrite(&r, sizeof(Record), 1, tmp);
+        }
+
+        fclose(fp);
+        fclose(tmp);
+
+        remove("db.txt");
+        rename("tmp.txt", "db.txt");
+
+        if (found) {
+            printf("Registro com ID %d atualizado com sucesso. Novo nome: %s\n", id, new_name);
+        } else {
+            printf("Registro com ID %d nao encontrado.\n", id);
+        }
+    } else {
+        if (fp) fclose(fp);
+        if (tmp) fclose(tmp);
+        printf("Erro ao abrir arquivos para update.\n");
     }
 
     LeaveCriticalSection(&file_mutex);
@@ -120,15 +197,38 @@ DWORD WINAPI thread_worker(LPVOID arg) {
             } else {
                 printf("Comando INSERT invalido.\n");
             }
-        } else if (strncmp(task.command, "DELETE", 6) == 0) {
+        }
+        else if (strncmp(task.command, "DELETE", 6) == 0) {
             int id;
             if (sscanf(task.command, "DELETE id=%d", &id) == 1) {
                 delete_record(id);
             } else {
                 printf("Comando DELETE invalido.\n");
             }
-        } else if (strncmp(task.command, "LIST", 4) == 0) {
+        }
+        else if (strncmp(task.command, "SELECT", 6) == 0) {
+            int id;
+            if (sscanf(task.command, "SELECT id=%d", &id) == 1) {
+                select_record(id);
+            } else {
+                printf("Comando SELECT invalido.\n");
+            }
+        }
+        else if (strncmp(task.command, "UPDATE", 6) == 0) {
+            int id;
+            char new_name[MAX_NAME];
+
+            if (sscanf(task.command, "UPDATE id=%d name='%49[^']'", &id, new_name) == 2) {
+                update_record(id, new_name);
+            } else {
+                printf("Comando UPDATE invalido.\n");
+            }
+        }
+        else if (strncmp(task.command, "LIST", 4) == 0) {
             list_records();
+        }
+        else {
+            printf("Comando desconhecido.\n");
         }
     }
 
