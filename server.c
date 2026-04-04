@@ -102,12 +102,20 @@ void list_records() {
 
     FILE *fp = fopen("db.txt", "rb");
     Record r;
+    int has_records = 0;
 
     if (fp != NULL) {
         printf("=== LISTA DE REGISTROS ===\n");
+
         while (fread(&r, sizeof(Record), 1, fp) == 1) {
             printf("ID: %d, Name: %s\n", r.id, r.name);
+            has_records = 1;
         }
+
+        if (!has_records) {
+            printf("Nenhum registro encontrado.\n");
+        }
+
         fclose(fp);
     } else {
         printf("db.txt ainda nao existe ou nao pode ser aberto.\n");
@@ -131,6 +139,35 @@ void select_record(int id) {
                 break;
             }
         }
+
+        fclose(fp);
+
+        if (!found) {
+            printf("Registro com ID %d nao encontrado.\n", id);
+        }
+    } else {
+        printf("db.txt ainda nao existe ou nao pode ser aberto.\n");
+    }
+
+    LeaveCriticalSection(&file_mutex);
+}
+
+void select_name(int id) {
+    EnterCriticalSection(&file_mutex);
+
+    FILE *fp = fopen("db.txt", "rb");
+    Record r;
+    int found = 0;
+
+    if (fp != NULL) {
+        while (fread(&r, sizeof(Record), 1, fp) == 1) {
+            if (r.id == id) {
+                printf("Name: %s\n", r.name);
+                found = 1;
+                break;
+            }
+        }
+
         fclose(fp);
 
         if (!found) {
@@ -158,6 +195,7 @@ void update_record(int id, const char *new_name) {
                 r.name[MAX_NAME - 1] = '\0';
                 found = 1;
             }
+
             fwrite(&r, sizeof(Record), 1, tmp);
         }
 
@@ -200,6 +238,7 @@ DWORD WINAPI thread_worker(LPVOID arg) {
         }
         else if (strncmp(task.command, "DELETE", 6) == 0) {
             int id;
+
             if (sscanf(task.command, "DELETE id=%d", &id) == 1) {
                 delete_record(id);
             } else {
@@ -208,10 +247,26 @@ DWORD WINAPI thread_worker(LPVOID arg) {
         }
         else if (strncmp(task.command, "SELECT", 6) == 0) {
             int id;
-            if (sscanf(task.command, "SELECT id=%d", &id) == 1) {
+            char field[20];
+
+            if (sscanf(task.command, "SELECT %19s WHERE id=%d", field, &id) == 2) {
+                if (strcmp(field, "name") == 0) {
+                    select_name(id);
+                } else if (strcmp(field, "*") == 0) {
+                    select_record(id);
+                } else {
+                    printf("Campo SELECT nao suportado.\n");
+                }
+            }
+            else if (sscanf(task.command, "SELECT id=%d", &id) == 1) {
                 select_record(id);
-            } else {
+            }
+            else {
                 printf("Comando SELECT invalido.\n");
+                printf("Exemplos validos:\n");
+                printf("  SELECT id=1\n");
+                printf("  SELECT name WHERE id=1\n");
+                printf("  SELECT * WHERE id=1\n");
             }
         }
         else if (strncmp(task.command, "UPDATE", 6) == 0) {
