@@ -27,7 +27,7 @@ int main() {
     char input[MAX_MSG];
 
     while (1) {
-        printf("Digite um comando (INSERT id=1 name='Joao', SELECT id=1, UPDATE id=1 name='Maria', LIST, DELETE id=1, EXIT): ");
+        printf("Digite um comando (INSERT id=1 name='Joao', SELECT name WHERE id=1, UPDATE id=1 name='Maria', LIST, DELETE id=1, EXIT): ");
 
         if (fgets(input, sizeof(input), stdin) == NULL) {
             break;
