@@ -1,0 +1,14 @@
+gcc server.c -o server -lpthread
+gcc client.c -o client
+
+-lpthread é obrigatório pois usamos threads POSIX
+
+-o server define o nome do executável gerado
+
+Abra dois terminais (Terminal A e Terminal B)
+
+./server
+
+saida: [Servidor] Aguardando comandos do cliente...
+
+./client
